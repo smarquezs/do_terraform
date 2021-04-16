@@ -1,0 +1,87 @@
+---
+# ElasticSearch 6.8.15 service
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch-68
+  labels:
+    app: elasticsearch-68
+spec:
+  ports:
+    - port: 9200
+  selector:
+    app: elasticsearch-68
+  clusterIP: None
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: elasticsearch-68
+spec:
+  serviceName: elasticsearch-68
+  replicas: 1
+  selector:
+    matchLabels:
+      app: elasticsearch-68
+  template:
+    metadata:
+      labels:
+        app: elasticsearch-68
+    spec:
+      tolerations:
+      - key: "db"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      nodeSelector:
+        service: "db"
+      securityContext:
+        fsGroup: 1000
+      containers:
+      - image: docker.elastic.co/elasticsearch/elasticsearch:6.8.15
+        name: es
+        ports:
+        - containerPort: 9200
+          name: es
+        env:
+        - name: bootstrap.memory_lock
+          value: 'false'
+        - name: ES_JAVA_OPTS
+          value: '-Xms512m -Xmx512m'
+        resources:
+          requests:
+            memory: "1Gi"
+          limits:
+            memory: "1Gi"
+        volumeMounts:
+        - name: es-data
+          mountPath: /usr/share/elasticsearch/data
+      initContainers:
+      - name: fix-permissions
+        image: busybox
+        command: ["sh", "-c", "chown -R 1000:1000 /usr/share/elasticsearch/data"]
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: es-data
+          mountPath: /usr/share/elasticsearch/data
+      - name: increase-vm-max-map
+        image: busybox
+        command: ["sysctl", "-w", "vm.max_map_count=262144"]
+        securityContext:
+          privileged: true
+      - name: increase-fd-ulimit
+        image: busybox
+        command: ["sh", "-c", "ulimit -n 65536"]
+        securityContext:
+          privileged: true
+  volumeClaimTemplates:
+  - metadata:
+      name: es-data
+    spec:
+      accessModes: [ "ReadWriteOnce" ]
+      storageClassName: do-block-storage
+      resources:
+        requests:
+          storage: 1Gi
